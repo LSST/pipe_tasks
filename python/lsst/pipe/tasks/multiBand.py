@@ -23,32 +23,40 @@ __all__ = ["DetectCoaddSourcesConfig", "DetectCoaddSourcesTask"]
 
 import warnings
 
-from lsst.pipe.base import (Struct, PipelineTask, PipelineTaskConfig, PipelineTaskConnections)
+import lsst.afw.math as afwMath
+import lsst.afw.table as afwTable
 import lsst.pipe.base.connectionTypes as cT
-from lsst.pex.config import Config, Field, ConfigurableField, ChoiceField
-from lsst.meas.algorithms import DynamicDetectionTask, ReferenceObjectLoader, ScaleVarianceTask
-from lsst.meas.base import SingleFrameMeasurementTask, ApplyApCorrTask, CatalogCalculationTask
+from lsst.daf.base import PropertyList
+from lsst.meas.algorithms import (DynamicDetectionTask, ReferenceObjectLoader,
+                                  ScaleVarianceTask)
+from lsst.meas.astrom import DirectMatchTask, denormalizeMatches
+from lsst.meas.base import (ApplyApCorrTask, CatalogCalculationTask,
+                            SingleFrameMeasurementTask)
 from lsst.meas.deblender import SourceDeblendTask
 from lsst.meas.extensions.scarlet import ScarletDeblendTask
-from lsst.meas.astrom import DirectMatchTask, denormalizeMatches
-from lsst.pipe.tasks.fakes import BaseFakeSourcesTask
-from lsst.pipe.tasks.setPrimaryFlags import SetPrimaryFlagsTask
-from lsst.pipe.tasks.propagateSourceFlags import PropagateSourceFlagsTask
-import lsst.afw.table as afwTable
-import lsst.afw.math as afwMath
-from lsst.daf.base import PropertyList
-from lsst.skymap import BaseSkyMap
 from lsst.obs.base import ExposureIdInfo
+from lsst.pex.config import ChoiceField, Config, ConfigurableField, Field
+from lsst.pipe.base import (PipelineTask, PipelineTaskConfig,
+                            PipelineTaskConnections, Struct)
+from lsst.pipe.tasks.fakes import BaseFakeSourcesTask
+from lsst.pipe.tasks.propagateSourceFlags import PropagateSourceFlagsTask
+from lsst.pipe.tasks.setPrimaryFlags import SetPrimaryFlagsTask
+from lsst.skymap import BaseSkyMap
 
+from .deblendCoaddSourcesPipeline import \
+    DeblendCoaddSourcesMultiConfig  # noqa: F401
+from .deblendCoaddSourcesPipeline import \
+    DeblendCoaddSourcesMultiTask  # noqa: F401
+from .deblendCoaddSourcesPipeline import \
+    DeblendCoaddSourcesSingleConfig  # noqa: F401
+from .deblendCoaddSourcesPipeline import \
+    DeblendCoaddSourcesSingleTask  # noqa: F401
 # NOTE: these imports are a convenience so multiband users only have to import this file.
-from .mergeDetections import MergeDetectionsConfig, MergeDetectionsTask  # noqa: F401
-from .mergeMeasurements import MergeMeasurementsConfig, MergeMeasurementsTask  # noqa: F401
+from .mergeDetections import (MergeDetectionsConfig,  # noqa: F401
+                              MergeDetectionsTask)
+from .mergeMeasurements import (MergeMeasurementsConfig,  # noqa: F401
+                                MergeMeasurementsTask)
 from .multiBandUtils import CullPeaksConfig  # noqa: F401
-from .deblendCoaddSourcesPipeline import DeblendCoaddSourcesSingleConfig  # noqa: F401
-from .deblendCoaddSourcesPipeline import DeblendCoaddSourcesSingleTask  # noqa: F401
-from .deblendCoaddSourcesPipeline import DeblendCoaddSourcesMultiConfig  # noqa: F401
-from .deblendCoaddSourcesPipeline import DeblendCoaddSourcesMultiTask  # noqa: F401
-
 
 """
 New set types:
@@ -661,7 +669,11 @@ class MeasureMergedCoaddSourcesTask(PipelineTask):
 
         outputs = self.run(**inputs)
         # Strip HeavyFootprints to save space on disk
-        sources = outputs.outputSources
+        if self.config.doStripFootprints:
+            sources = outputs.outputSources
+            for source in sources[sources["parent"] != 0]:
+                source.setFootprint(None)
+
         butlerQC.put(outputs, outputRefs)
 
     def run(self, exposure, sources, skyInfo, exposureId, ccdInputs=None, visitCatalogs=None, wcsUpdates=None,
