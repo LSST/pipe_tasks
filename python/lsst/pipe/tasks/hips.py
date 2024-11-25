@@ -1195,14 +1195,6 @@ class GenerateHipsTask(pipeBase.PipelineTask):
             forceDirectory=True
         )
 
-        # We need to convert nans to the minimum values in the mapping.
-        arr_red = image_red.array.copy()
-        arr_red[np.isnan(arr_red)] = png_mapping.minimum[0]
-        arr_green = image_green.array.copy()
-        arr_green[np.isnan(arr_green)] = png_mapping.minimum[1]
-        arr_blue = image_blue.array.copy()
-        arr_blue[np.isnan(arr_blue)] = png_mapping.minimum[2]
-
         image_array = self.rgbGenerator.run(band_mapping)
 
         im = Image.fromarray(image_array[::-1, :, :], mode="RGB")
