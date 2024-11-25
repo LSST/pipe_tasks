@@ -1674,7 +1674,7 @@ class GenerateColorHipsTask(GenerateHipsTask):
     _DefaultName = "generateColorHips"
     color_task = True
 
-    def __init__(self, *, config, log, initInputs, **kwargs):
+    def __init__(self, *, config=None, log=None, initInputs=None, **kwargs):
         super().__init__(config=config, log=log, **kwargs)
         self.makeSubtask("rgbGenerator")
 
