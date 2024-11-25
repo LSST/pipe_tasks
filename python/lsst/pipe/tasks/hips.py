@@ -1702,7 +1702,7 @@ class GenerateColorHipsTask(GenerateHipsTask):
         band_names = []
         band_values = []
         for band_name, config in self.config.rgbGenerator.channelConfig.items():
-            band_names.append(band_names)
+            band_names.append(band_name)
             band_values.append((config.r, config.g, config.b))
         # convert to a space where it is easy to calcualte the hue
         labs = colour.XYZ_to_Oklab(colour.RGB_to_XYZ(band_values, colourspace="CIE RGB"))
