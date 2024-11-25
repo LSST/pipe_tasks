@@ -1195,7 +1195,7 @@ class GenerateHipsTask(pipeBase.PipelineTask):
             forceDirectory=True
         )
 
-        image_array = self.rgbGenerator.run(band_mapping)
+        image_array = self.rgbGenerator.run(band_mapping).outputRGB
 
         im = Image.fromarray(image_array[::-1, :, :], mode="RGB")
 
