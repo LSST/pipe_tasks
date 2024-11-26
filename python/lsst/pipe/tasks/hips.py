@@ -1653,8 +1653,8 @@ class GenerateColorHipsConfig(GenerateHipsConfig,
 
     def setDefaults(self):
         self.rgbGenerator: PrettyPictureConfig
-        self.rgbGenerator.imageRemappingConfig.absMax = None
-        self.rgbGenerator.imageRemappingConfig.quant = 1
+        self.rgbGenerator.imageRemappingConfig.absMax = 1700
+        # self.rgbGenerator.imageRemappingConfig.quant = 1
         self.rgbGenerator.luminanceConfig.Q = 0.7
         self.rgbGenerator.doPSFDeconcovlve = False
         self.rgbGenerator.exposureBrackets = [0.9, 1, 3]
