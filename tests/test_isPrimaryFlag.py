@@ -158,10 +158,12 @@ class IsPrimaryTestCase(lsst.utils.tests.TestCase):
         # Load sample input from disk
         expPath = os.path.join(TESTDIR, "data", "v695833-e0-c000-a00.sci.fits")
         self.exposure = afwImage.ExposureF(expPath)
+        self.band = self.exposure.filter.bandLabel
 
         # Characterize the image (create PSF, etc.)
         charImConfig = CharacterizeImageConfig()
         charImConfig.measureApCorr.sourceSelector["science"].doSignalToNoise = False
+        charImConfig.maxUnNormPsfEllipticityPerBand[self.band] = 3.0
         charImTask = CharacterizeImageTask(config=charImConfig)
         self.charImResults = charImTask.run(self.exposure)
 
