@@ -24,12 +24,12 @@ __all__ = ["CharacterizeImageConfig", "CharacterizeImageTask"]
 import numpy as np
 
 from lsstDebug import getDebugFrame
+import lsst.afw.math as afwMath
 import lsst.afw.table as afwTable
 import lsst.pex.config as pexConfig
 import lsst.pipe.base as pipeBase
 import lsst.daf.base as dafBase
 import lsst.pipe.base.connectionTypes as cT
-from lsst.afw.math import BackgroundList
 from lsst.afw.table import SourceTable
 from lsst.meas.algorithms import (
     SubtractBackgroundTask,
@@ -130,6 +130,29 @@ class CharacterizeImageConfig(pipeBase.PipelineTaskConfig,
         doc="Number of iterations of detect sources, measure sources, "
             "estimate PSF. If useSimplePsf is True then 2 should be plenty; "
             "otherwise more may be wanted.",
+    )
+    maxUnNormPsfEllipticityPerBand = pexConfig.DictField(
+        keytype=str,
+        itemtype=float,
+        default={
+            "u": 2.47,
+            "g": 2.52,
+            "r": 2.10,
+            "i": 2.00,
+            "z": 2.10,
+            "y": 2.12,
+        },
+        doc="Maximum unnormalized ellipticity (defined as hypot(Ixx - Iyy, 2Ixy)) of the PSF model "
+            "deemed good enough for further consideration.  Values above this threshold raise "
+            "UnprocessableDataError.",
+    )
+    maxUnNormPsfEllipticityFallback = pexConfig.Field(
+        dtype=float,
+        default=2.0,
+        doc="Fallback maximum unnormalized ellipticity (defined as hypot(Ixx - Iyy, 2Ixy)) of the "
+            "PSF model deemed good enough for further consideration if band of dataset is not in "
+            "the config.maxUnNormPsfEllipticityPerBand dict.  Values above this threshold "
+            "raise UnprocessableDataError.",
     )
     background = pexConfig.ConfigurableField(
         target=SubtractBackgroundTask,
@@ -423,17 +446,46 @@ class CharacterizeImageTask(pipeBase.PipelineTask):
                 idGenerator=idGenerator,
                 background=background,
             )
-
             psf = dmeRes.exposure.getPsf()
             # Just need a rough estimate; average positions are fine
             psfAvgPos = psf.getAveragePosition()
-            psfSigma = psf.computeShape(psfAvgPos).getDeterminantRadius()
+            psfShape = psf.computeShape(psfAvgPos)
+            psfSigma = psfShape.getDeterminantRadius()
+            psfE1 = (psfShape.getIxx() - psfShape.getIyy())/(psfShape.getIxx() + psfShape.getIyy())
+            psfE2 = 2*psfShape.getIxy()/(psfShape.getIxx() + psfShape.getIyy())
+            psfE = np.sqrt(psfE1**2.0 + psfE2**2.0)
+            unNormPsfE = np.hypot(psfShape.getIxx() - psfShape.getIyy(), 2*psfShape.getIxy())
+
             psfDimensions = psf.computeImage(psfAvgPos).getDimensions()
             medBackground = np.median(dmeRes.background.getImage().getArray())
-            self.log.info("iter %s; PSF sigma=%0.4f, dimensions=%s; median background=%0.2f",
-                          i + 1, psfSigma, psfDimensions, medBackground)
+            self.log.info(
+                "iter %s; PSF sigma=%0.4f, psfE=%.3f, unNormPsfE=%.2f dimensions=%s; "
+                "median background=%0.2f",
+                i + 1, psfSigma, psfE, unNormPsfE, psfDimensions, medBackground)
             if np.isnan(psfSigma):
                 raise RuntimeError("PSF sigma is NaN, cannot continue PSF determination.")
+        band = exposure.filter.bandLabel
+        if band in self.config.maxUnNormPsfEllipticityPerBand:
+            maxUnNormPsfEllipticity = self.config.maxUnNormPsfEllipticityPerBand[band]
+        else:
+            maxUnNormPsfEllipticity = self.config.maxUnNormPsfEllipticityFallback
+            self.log.warning(
+                f"Band {band} was not included in self.config.maxUnNormPsfEllipticityPerBand. "
+                f"Setting maxUnNormPsfEllipticity to fallback value of {maxUnNormPsfEllipticity}."
+            )
+        if unNormPsfE > maxUnNormPsfEllipticity:
+            raise pipeBase.UnprocessableDataError(
+                "The unnormalized model PSF ellipticity, defined as hypot(Ixx - Iyy, 2Ixy), is "
+                f"{unNormPsfE:.2f} which is greater than the maximum deemed acceptable: "
+                f"{maxUnNormPsfEllipticity}"
+            )
+        if unNormPsfE > 0.92*maxUnNormPsfEllipticity and psfE > 0.11:
+            raise pipeBase.UnprocessableDataError(
+                "The combined model PSF ellipticity and unnormalized model PSF ellipticity, "
+                "defined as hypot(Ixx - Iyy, 2Ixy), do not satisfy the condition: "
+                f"unNormalizedPsfE <= {0.9*maxUnNormPsfEllipticity:.2f} ({unNormPsfE:.2f}) "
+                f"AND psfE <= 0.11 (psfE={psfE:.2f})"
+            )
 
         self.display("psf", exposure=dmeRes.exposure, sourceCat=dmeRes.sourceCat)
 
@@ -539,6 +591,9 @@ class CharacterizeImageTask(pipeBase.PipelineTask):
         ------
         LengthError
             Raised if there are too many CR pixels.
+        UnprocessableDataError
+            Raised if the unnormalized model PSF ellipticity is greater than
+            maxUnNormPsfEllipticity.
         """
         # install a simple PSF model, if needed or wanted
         if not exposure.hasPsf() or (self.config.doMeasurePsf and self.config.useSimplePsf):
@@ -558,7 +613,7 @@ class CharacterizeImageTask(pipeBase.PipelineTask):
         self.display("repair_iter", exposure=exposure)
 
         if background is None:
-            background = BackgroundList()
+            background = afwMath.BackgroundList()
 
         sourceIdFactory = idGenerator.make_table_id_factory()
         table = SourceTable.make(self.schema, sourceIdFactory)
