@@ -252,6 +252,11 @@ class IsPrimaryTestCase(lsst.utils.tests.TestCase):
         deconvolved = deconvolveTask.run(coadds["test"], catalog).deconvolved
         mDeconvolved = afwImage.MultibandExposure.fromExposures(["test"], [deconvolved])
         # deblend
+        # This is a hack because the variance is not calibrated properly
+        # (it is 3 orders of magnitude too high), which causes the deblender
+        # to improperly deblend most sources due to the sparsity constraint.
+        coadds.variance.array[:] = 2e-1
+        mDeconvolved.variance.array[:] = 2e-1
         catalog, modelData = deblendTask.run(coadds, mDeconvolved, catalog)
         # Attach footprints to the catalog
         mes.io.updateCatalogFootprints(
